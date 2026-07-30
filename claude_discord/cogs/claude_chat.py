@@ -23,6 +23,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from claude_code_core.backend import SessionBackend
+from claude_code_core.presentation import PresentationMode
 
 from ..backend_factory import BackendFactory
 from ..backend_settings import BackendSettings, session_is_resumable
@@ -790,6 +791,8 @@ class ClaudeChatCog(commands.Cog):
         result_sink: Callable[[str | None, str | None], Awaitable[None]] | None = None,
         attachments: list[tuple[str, bytes]] | None = None,
         working_dir: str | None = None,
+        chat_only: bool = False,
+        presentation_mode: PresentationMode = PresentationMode.STREAM,
     ) -> discord.Thread:
         """Create a new thread and optionally start a Claude Code session.
 
@@ -826,6 +829,9 @@ class ClaudeChatCog(commands.Cog):
             working_dir: Optional working directory for this session. This
                         overrides the backend's default without changing other
                         sessions.
+            chat_only: Hide technical lifecycle and tool messages for this session.
+            presentation_mode: Decide whether assistant text streams or only the
+                        terminal answer is delivered.
 
         Returns:
             The newly created :class:`discord.Thread`.
@@ -862,6 +868,8 @@ class ClaudeChatCog(commands.Cog):
                     fork=fork,
                     working_dir_override=working_dir,
                     result_sink=result_sink,
+                    chat_only=chat_only,
+                    presentation_mode=presentation_mode,
                 )
             )
         return thread
@@ -1248,6 +1256,7 @@ class ClaudeChatCog(commands.Cog):
         result_sink: Callable[[str | None, str | None], Awaitable[None]] | None = None,
         interrupt_existing: bool = False,
         interrupt_notice: str = "-# ⚡ Interrupted. Starting with new instruction...",
+        presentation_mode: PresentationMode = PresentationMode.STREAM,
     ) -> None:
         """Execute Claude Code CLI and stream results to the thread.
 
@@ -1354,6 +1363,7 @@ class ClaudeChatCog(commands.Cog):
                     inbox_dashboard=dashboard,
                     claude_command=runner.command,
                     chat_only=chat_only,
+                    presentation_mode=presentation_mode,
                     notify_user_id=user_message.author.id,
                     result_sink=result_sink,
                     backend_settings=self._backend_settings,

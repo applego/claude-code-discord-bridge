@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from claude_code_core.presentation import PresentationMode
 from claude_discord.claude.types import (
     AskOption,
     AskQuestion,
@@ -202,6 +203,34 @@ class TestOnAssistantText:
             c for c in thread.send.call_args_list if c.args and isinstance(c.args[0], str)
         ]
         assert any("Hello!" in c.args[0] for c in text_sends)
+
+    @pytest.mark.asyncio
+    async def test_final_mode_suppresses_commentary_and_posts_one_terminal_answer(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(
+            thread,
+            runner,
+            chat_only=True,
+            presentation_mode=PresentationMode.FINAL,
+        )
+        p = EventProcessor(config)
+
+        await p.process(
+            StreamEvent(message_type=MessageType.ASSISTANT, text="I will inspect this.")
+        )
+        await p.process(StreamEvent(message_type=MessageType.ASSISTANT, text="The cause is clear."))
+
+        assert thread.send.call_count == 0
+
+        await p.process(_make_result_event(text="Fixed and verified.", session_id="s1"))
+
+        text_sends = [
+            call.args[0]
+            for call in thread.send.call_args_list
+            if call.args and isinstance(call.args[0], str)
+        ]
+        assert text_sends == ["Fixed and verified."]
 
     @pytest.mark.asyncio
     async def test_complete_text_marks_assistant_text_sent(
