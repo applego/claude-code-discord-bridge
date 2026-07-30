@@ -143,7 +143,8 @@ class TestOwnerMention:
         thread.send.assert_called_once()
         sent_text = thread.send.call_args.args[0]
         assert "<@42>" in sent_text
-        assert "エージェントのターンが完了" in sent_text
+        assert "Agent turn complete" in sent_text
+        assert "Reply to this message to continue" in sent_text
         assert "Claude" not in sent_text
         assert "このメッセージにそのまま返信" in sent_text
 
