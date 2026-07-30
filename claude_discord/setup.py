@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from claude_code_core.presentation import PresentationMode
+
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
 
@@ -348,6 +350,9 @@ async def setup_bridge(
         monitor_all_channels=monitor_all_channels,
         mention_anywhere=mention_anywhere,
         thread_context_days=thread_context_days,
+        presentation_mode=PresentationMode(
+            os.getenv("CCDB_PRESENTATION_MODE", PresentationMode.STREAM.value).strip().lower()
+        ),
     )
     await bot.add_cog(chat_cog)
     logger.info("Registered ClaudeChatCog")

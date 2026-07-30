@@ -119,6 +119,7 @@ class ClaudeChatCog(commands.Cog):
         thread_context_days: int = DEFAULT_DAYS,
         factory: BackendFactory | None = None,
         backend_settings: BackendSettings | None = None,
+        presentation_mode: PresentationMode = PresentationMode.STREAM,
     ) -> None:
         self.bot = bot
         self.repo = repo
@@ -128,6 +129,7 @@ class ClaudeChatCog(commands.Cog):
         # When either is None, we fall back to self.runner.clone() (legacy).
         self._factory = factory
         self._backend_settings = backend_settings
+        self._presentation_mode = presentation_mode
         self._max_concurrent = max_concurrent
         self._allowed_user_ids = allowed_user_ids
         # When True, skip channel-ID filtering and accept all guild channels.
@@ -792,7 +794,7 @@ class ClaudeChatCog(commands.Cog):
         attachments: list[tuple[str, bytes]] | None = None,
         working_dir: str | None = None,
         chat_only: bool = False,
-        presentation_mode: PresentationMode = PresentationMode.STREAM,
+        presentation_mode: PresentationMode | None = None,
     ) -> discord.Thread:
         """Create a new thread and optionally start a Claude Code session.
 
@@ -869,7 +871,7 @@ class ClaudeChatCog(commands.Cog):
                     working_dir_override=working_dir,
                     result_sink=result_sink,
                     chat_only=chat_only,
-                    presentation_mode=presentation_mode,
+                    presentation_mode=presentation_mode or self._presentation_mode,
                 )
             )
         return thread
@@ -1256,7 +1258,7 @@ class ClaudeChatCog(commands.Cog):
         result_sink: Callable[[str | None, str | None], Awaitable[None]] | None = None,
         interrupt_existing: bool = False,
         interrupt_notice: str = "-# ⚡ Interrupted. Starting with new instruction...",
-        presentation_mode: PresentationMode = PresentationMode.STREAM,
+        presentation_mode: PresentationMode | None = None,
     ) -> None:
         """Execute Claude Code CLI and stream results to the thread.
 
@@ -1363,7 +1365,7 @@ class ClaudeChatCog(commands.Cog):
                     inbox_dashboard=dashboard,
                     claude_command=runner.command,
                     chat_only=chat_only,
-                    presentation_mode=presentation_mode,
+                    presentation_mode=presentation_mode or self._presentation_mode,
                     notify_user_id=user_message.author.id,
                     result_sink=result_sink,
                     backend_settings=self._backend_settings,
