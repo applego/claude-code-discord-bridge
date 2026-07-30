@@ -583,6 +583,35 @@ class TestSpawnSession:
         thread.send.assert_called_once_with("Hello")
         mock_run.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_deferred_spawn_preserves_runtime_policy_for_first_reply(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import discord
+
+        from claude_code_core.presentation import PresentationMode
+
+        thread = MagicMock(spec=discord.Thread)
+        thread.id = 42
+        thread.send = AsyncMock()
+        channel = MagicMock()
+        channel.create_thread = AsyncMock(return_value=thread)
+        cog = ClaudeChatCog(bot=MagicMock(), repo=MagicMock(), runner=MagicMock())
+
+        with patch.object(cog, "_run_claude", new=AsyncMock()):
+            await cog.spawn_session(
+                channel,
+                "Hello",
+                auto_start=False,
+                working_dir="/work/project",
+                chat_only=True,
+                presentation_mode=PresentationMode.FINAL,
+            )
+
+        assert cog._thread_working_dirs[42] == "/work/project"
+        assert cog._thread_presentation_modes[42] is PresentationMode.FINAL
+        assert 42 in cog._chat_only_thread_ids
+
 
 class TestFetchSeedContext:
     """Tests for ClaudeChatCog._fetch_seed_context()."""

@@ -401,7 +401,7 @@ class EventProcessor:
 
         # ExitPlanMode — show plan embed with Approve/Cancel buttons.
         # Skip in chat_only mode.
-        if event.is_plan_approval and not event.is_partial and not self._chat_only:
+        if event.is_plan_approval and not event.is_partial:
             await self._handle_plan_approval(event)
 
         # Track per-turn usage from assistant messages for accurate context stats.

@@ -1544,6 +1544,28 @@ class TestUserActionMentions:
         assert thread.send.call_args.kwargs["content"] == "<@42>"
 
     @pytest.mark.asyncio
+    async def test_plan_approval_remains_interactive_in_final_chat_only_mode(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(
+            thread,
+            runner,
+            chat_only=True,
+            presentation_mode=PresentationMode.FINAL,
+        )
+        p = EventProcessor(config)
+
+        await p.process(
+            StreamEvent(
+                message_type=MessageType.ASSISTANT,
+                text="Implementation plan",
+                is_plan_approval=True,
+            )
+        )
+
+        assert "view" in thread.send.call_args.kwargs
+
+    @pytest.mark.asyncio
     async def test_permission_request_mentions_notify_user(
         self, thread: MagicMock, runner: MagicMock
     ) -> None:

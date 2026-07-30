@@ -162,6 +162,9 @@ class ClaudeChatCog(commands.Cog):
         # to fully clean up before starting the replacement session.
         self._active_tasks: dict[int, asyncio.Task] = {}
         self._thread_locks: dict[int, asyncio.Lock] = {}
+        self._thread_presentation_modes: dict[int, PresentationMode] = {}
+        self._thread_working_dirs: dict[int, str] = {}
+        self._chat_only_thread_ids: set[int] = set()
         # Dashboard may be None until bot is ready; resolved lazily in _get_dashboard()
         self._dashboard = dashboard
         # For AskUserQuestion persistence across restarts
@@ -844,6 +847,12 @@ class ClaudeChatCog(commands.Cog):
             type=discord.ChannelType.public_thread,
             auto_archive_duration=60,
         )
+        if presentation_mode is not None:
+            self._thread_presentation_modes[thread.id] = presentation_mode
+        if working_dir is not None:
+            self._thread_working_dirs[thread.id] = working_dir
+        if chat_only:
+            self._chat_only_thread_ids.add(thread.id)
         # Post the prompt so StatusManager has a Message to add reactions to.
         # Long prompts (e.g. an ingested Teams thread) exceed Discord's
         # per-message limit, so chunk the seed for display. The full prompt is
@@ -910,7 +919,10 @@ class ClaudeChatCog(commands.Cog):
         if record is not None and session_id:
             session_id = await self._session_id_for_current_backend(thread, record)
 
-        chat_only = (thread.parent_id or 0) in self._chat_only_channel_ids
+        chat_only = (
+            thread.id in self._chat_only_thread_ids
+            or (thread.parent_id or 0) in self._chat_only_channel_ids
+        )
         # _run_claude serializes per thread: with interrupt=False it queues
         # behind the current turn, with interrupt=True it preempts it. Either
         # way eviction + registration is atomic under the per-thread lock, so a
@@ -920,7 +932,9 @@ class ClaudeChatCog(commands.Cog):
             thread,
             text,
             session_id=session_id,
-            working_dir_override=record.working_dir if record else None,
+            working_dir_override=(
+                record.working_dir if record else self._thread_working_dirs.get(thread.id)
+            ),
             chat_only=chat_only,
             interrupt_existing=interrupt,
             interrupt_notice="-# ⚡ Interrupted by another session's message...",
@@ -1117,7 +1131,10 @@ class ClaudeChatCog(commands.Cog):
                     await _dashboard.refresh_inbox(_inbox_repo)
 
         # Determine chat_only from the parent channel of this thread.
-        chat_only = (thread.parent_id or 0) in self._chat_only_channel_ids
+        chat_only = (
+            thread.id in self._chat_only_thread_ids
+            or (thread.parent_id or 0) in self._chat_only_channel_ids
+        )
         # A human reply preempts whatever is running in this thread. _run_claude
         # is the single serialization point: it interrupts the in-flight run and
         # registers the replacement atomically under the per-thread lock, so two
@@ -1128,7 +1145,9 @@ class ClaudeChatCog(commands.Cog):
             prompt,
             session_id=session_id,
             images=images,
-            working_dir_override=record.working_dir if record else None,
+            working_dir_override=(
+                record.working_dir if record else self._thread_working_dirs.get(thread.id)
+            ),
             chat_only=chat_only,
             interrupt_existing=True,
         )
@@ -1276,6 +1295,17 @@ class ClaudeChatCog(commands.Cog):
         thread. The subprocess itself runs *outside* the lock so a later message
         can still interrupt this run.
         """
+        effective_presentation_mode = (
+            presentation_mode
+            or self._thread_presentation_modes.get(thread.id)
+            or self._presentation_mode
+        )
+        self._thread_presentation_modes[thread.id] = effective_presentation_mode
+        if working_dir_override is not None:
+            self._thread_working_dirs[thread.id] = working_dir_override
+        if chat_only:
+            self._chat_only_thread_ids.add(thread.id)
+
         dashboard = self._get_dashboard()
         description = prompt[:100].replace("\n", " ")
 
@@ -1365,7 +1395,7 @@ class ClaudeChatCog(commands.Cog):
                     inbox_dashboard=dashboard,
                     claude_command=runner.command,
                     chat_only=chat_only,
-                    presentation_mode=presentation_mode or self._presentation_mode,
+                    presentation_mode=effective_presentation_mode,
                     notify_user_id=user_message.author.id,
                     result_sink=result_sink,
                     backend_settings=self._backend_settings,
