@@ -583,6 +583,97 @@ class TestSpawnSession:
         thread.send.assert_called_once_with("Hello")
         mock_run.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_deferred_spawn_preserves_runtime_policy_for_first_reply(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import discord
+
+        from claude_code_core.presentation import PresentationMode
+
+        thread = MagicMock(spec=discord.Thread)
+        thread.id = 42
+        thread.send = AsyncMock()
+        channel = MagicMock()
+        channel.create_thread = AsyncMock(return_value=thread)
+        cog = ClaudeChatCog(bot=MagicMock(), repo=MagicMock(), runner=MagicMock())
+
+        with patch.object(cog, "_run_claude", new=AsyncMock()):
+            await cog.spawn_session(
+                channel,
+                "Hello",
+                auto_start=False,
+                working_dir="/work/project",
+                chat_only=True,
+                presentation_mode=PresentationMode.FINAL,
+            )
+
+        assert cog._thread_working_dirs[42] == "/work/project"
+        assert cog._thread_presentation_modes[42] is PresentationMode.FINAL
+        assert 42 in cog._chat_only_thread_ids
+
+    @pytest.mark.asyncio
+    async def test_deferred_spawn_policy_survives_cog_restart(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import discord
+
+        from claude_code_core.presentation import PresentationMode
+
+        values: dict[str, str] = {}
+        settings = MagicMock()
+        settings.set = AsyncMock(side_effect=lambda key, value: values.__setitem__(key, value))
+        settings.get = AsyncMock(side_effect=lambda key, default=None: values.get(key, default))
+        thread = MagicMock(spec=discord.Thread)
+        thread.id = 42
+        thread.send = AsyncMock()
+        channel = MagicMock()
+        channel.create_thread = AsyncMock(return_value=thread)
+        first_cog = ClaudeChatCog(
+            bot=MagicMock(), repo=MagicMock(), runner=MagicMock(), settings_repo=settings
+        )
+
+        with patch.object(first_cog, "_run_claude", new=AsyncMock()):
+            await first_cog.spawn_session(
+                channel,
+                "Hello",
+                auto_start=False,
+                working_dir="/work/project",
+                chat_only=True,
+                presentation_mode=PresentationMode.FINAL,
+            )
+
+        restarted_cog = ClaudeChatCog(
+            bot=MagicMock(), repo=MagicMock(), runner=MagicMock(), settings_repo=settings
+        )
+        assert await restarted_cog._thread_runtime_policy(42) == (
+            "/work/project",
+            True,
+            PresentationMode.FINAL,
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_level_chat_only_does_not_become_thread_policy(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import discord
+
+        thread = MagicMock(spec=discord.Thread)
+        thread.id = 42
+        cog = ClaudeChatCog(bot=MagicMock(), repo=MagicMock(), runner=MagicMock())
+        cog._dashboard = None
+        cog._get_dashboard = lambda: None  # type: ignore[method-assign]
+        cog._settings_repo = None
+
+        with (
+            patch.object(cog, "_evict_active_run", new=AsyncMock()),
+            patch.object(cog, "_build_runner_for_thread", new=AsyncMock(side_effect=RuntimeError)),
+            pytest.raises(RuntimeError),
+        ):
+            await cog._run_claude(MagicMock(), thread, "compact", session_id=None, chat_only=True)
+
+        assert 42 not in cog._chat_only_thread_ids
+
 
 class TestFetchSeedContext:
     """Tests for ClaudeChatCog._fetch_seed_context()."""
@@ -669,6 +760,25 @@ class TestFetchSeedContext:
             await cog.spawn_session(channel, "Start session", auto_start=True)
 
         mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_spawn_passes_working_dir_to_run(self) -> None:
+        """A programmatic spawn can override the backend working directory."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import discord
+
+        thread = MagicMock(spec=discord.Thread)
+        thread.send = AsyncMock(return_value=MagicMock())
+        channel = MagicMock()
+        channel.create_thread = AsyncMock(return_value=thread)
+        cog = ClaudeChatCog(bot=MagicMock(), repo=MagicMock(), runner=MagicMock())
+
+        mock_run = AsyncMock()
+        with patch.object(cog, "_run_claude", new=mock_run):
+            await cog.spawn_session(channel, "Start session", working_dir="/work/project")
+
+        assert mock_run.call_args.kwargs["working_dir_override"] == "/work/project"
 
 
 class TestOnReady:

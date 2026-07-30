@@ -17,6 +17,8 @@ from pathlib import Path
 
 import discord
 
+from claude_code_core.presentation import FinalResult, StreamProjector, TextUpdate
+
 from ..claude.types import AskQuestion, MessageType, SessionState, StreamEvent, ToolUseEvent
 from ..collision import extract_written_path
 from ..discord_ui.chunker import _wrap_tables_in_fences, chunk_message
@@ -150,6 +152,8 @@ class EventProcessor:
             thread_id=config.thread.id,
         )
         self._streamer = StreamingMessageManager(config.thread)
+        self._projector = StreamProjector(config.presentation_mode)
+        self._current_projections: tuple[object, ...] = ()
 
         # Guards against duplicate embeds/messages in the same run.
         self._session_start_sent: bool = False
@@ -237,6 +241,7 @@ class EventProcessor:
 
     async def process(self, event: StreamEvent) -> None:
         """Dispatch a single stream event to the appropriate handler."""
+        self._current_projections = self._projector.project(event)
         if event.message_type == MessageType.SYSTEM:
             await self._on_system(event)
         elif event.message_type == MessageType.ASSISTANT:
@@ -367,7 +372,7 @@ class EventProcessor:
 
         # Text streaming — compute delta from last partial, edit in place.
         # Always shown — this IS the chat content.
-        if event.text:
+        if event.text and any(isinstance(item, TextUpdate) for item in self._current_projections):
             await self._handle_text(event)
 
         # ScheduleWakeup — capture the request so the caller can register a
@@ -396,7 +401,7 @@ class EventProcessor:
 
         # ExitPlanMode — show plan embed with Approve/Cancel buttons.
         # Skip in chat_only mode.
-        if event.is_plan_approval and not event.is_partial and not self._chat_only:
+        if event.is_plan_approval and not event.is_partial:
             await self._handle_plan_approval(event)
 
         # Track per-turn usage from assistant messages for accurate context stats.
@@ -514,7 +519,11 @@ class EventProcessor:
                 await self._config.status.set_error()
         else:
             # Post final result text only if no assistant text was already sent.
-            response_text = event.text
+            projected_final = next(
+                (item.text for item in self._current_projections if isinstance(item, FinalResult)),
+                None,
+            )
+            response_text = projected_final
             if response_text and not self._assistant_text_sent:
                 last_sent: discord.Message | None = None
                 for chunk in chunk_message(response_text):

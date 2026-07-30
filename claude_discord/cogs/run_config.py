@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import discord
 
 from claude_code_core.backend import SessionBackend
+from claude_code_core.presentation import PresentationMode
 
 from ..claude.types import ImageData
 from ..concurrency import SessionRegistry
@@ -92,6 +93,10 @@ class RunConfig:
     # blocks, session start/complete embeds, and other technical details are hidden.
     # Useful for public channels where non-technical users are watching.
     chat_only: bool = False
+    # Frontend-neutral assistant text policy. STREAM preserves the historical
+    # Discord behavior; FINAL emits only the terminal answer while keeping
+    # interactive requests and errors immediate.
+    presentation_mode: PresentationMode = PresentationMode.STREAM
     # Discord user to mention when Claude pauses for an explicit button/form action.
     notify_user_id: int | None = None
     # Optional callback invoked once when the session reaches its terminal state,
