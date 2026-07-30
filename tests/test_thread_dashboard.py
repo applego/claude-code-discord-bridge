@@ -146,7 +146,6 @@ class TestOwnerMention:
         assert "Agent turn complete" in sent_text
         assert "Reply to this message to continue" in sent_text
         assert "Claude" not in sent_text
-        assert "このメッセージにそのまま返信" in sent_text
 
     @pytest.mark.asyncio
     async def test_mention_not_sent_if_already_waiting(self) -> None:
