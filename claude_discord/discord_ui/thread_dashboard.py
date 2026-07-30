@@ -159,7 +159,7 @@ class ThreadStatusDashboard:
         if should_mention and thread is not None:
             try:
                 await thread.send(
-                    f"✅ <@{self._owner_id}> Claudeのターンが完了しました。\n"
+                    f"✅ <@{self._owner_id}> エージェントのターンが完了しました。\n"
                     "続ける場合は、このメッセージにそのまま返信してください。"
                 )
             except (discord.HTTPException, RuntimeError):
