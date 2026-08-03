@@ -146,6 +146,37 @@ class TestCodexRunnerBuildArgs:
         assert "mcp_servers.cloudflare.enabled=false" in args
         assert "mcp_servers.freee.enabled=false" in args
 
+    def test_invalid_effort_raises(self) -> None:
+        runner = CodexRunner(command="codex", model="gpt-5.5", effort="bogus")
+        with pytest.raises(ValueError, match="Invalid Codex effort"):
+            runner._build_args("hello", session_id=None)
+
+    @pytest.mark.parametrize(
+        "session_id",
+        [None, "019e29a0-d5b0-71f0-bdc0-46f09a06fdaf"],
+    )
+    def test_append_system_prompt_becomes_developer_instructions(
+        self, session_id: str | None
+    ) -> None:
+        context = 'AI Lounge says: "check the other thread" 🎉\nThen announce your work.'
+        runner = CodexRunner(command="codex", append_system_prompt=context)
+
+        args = runner._build_args("user prompt stays on stdin", session_id=session_id)
+
+        expected = f"developer_instructions={json.dumps(context, ensure_ascii=False)}"
+        assert expected in args
+        config_index = args.index(expected)
+        assert args[config_index - 1] == "-c"
+        assert "user prompt stays on stdin" not in args
+        assert config_index < args.index("-")
+
+    def test_no_system_prompt_omits_developer_instructions(self) -> None:
+        runner = CodexRunner(command="codex")
+
+        args = runner._build_args("hello", session_id=None)
+
+        assert not any(arg.startswith("developer_instructions=") for arg in args)
+
 
 @pytest.mark.asyncio
 async def test_mcp_oauth_startup_failure_retries_with_server_disabled(monkeypatch) -> None:
@@ -210,36 +241,16 @@ async def test_streamed_mcp_failure_retries_with_server_disabled(monkeypatch) ->
 def test_mcp_server_extraction_does_not_match_observer() -> None:
     assert _failed_mcp_servers("MCP observer cloudflare reported an error") == set()
 
-    def test_invalid_effort_raises(self) -> None:
-        runner = CodexRunner(command="codex", model="gpt-5.5", effort="bogus")
-        with pytest.raises(ValueError, match="Invalid Codex effort"):
-            runner._build_args("hello", session_id=None)
 
-    @pytest.mark.parametrize(
-        "session_id",
-        [None, "019e29a0-d5b0-71f0-bdc0-46f09a06fdaf"],
-    )
-    def test_append_system_prompt_becomes_developer_instructions(
-        self, session_id: str | None
-    ) -> None:
-        context = 'AI Lounge says: "check the other thread" 🎉\nThen announce your work.'
-        runner = CodexRunner(command="codex", append_system_prompt=context)
-
-        args = runner._build_args("user prompt stays on stdin", session_id=session_id)
-
-        expected = f"developer_instructions={json.dumps(context, ensure_ascii=False)}"
-        assert expected in args
-        config_index = args.index(expected)
-        assert args[config_index - 1] == "-c"
-        assert "user prompt stays on stdin" not in args
-        assert config_index < args.index("-")
-
-    def test_no_system_prompt_omits_developer_instructions(self) -> None:
-        runner = CodexRunner(command="codex")
-
-        args = runner._build_args("hello", session_id=None)
-
-        assert not any(arg.startswith("developer_instructions=") for arg in args)
+@pytest.mark.parametrize(
+    ("error", "server"),
+    [
+        ("required MCP servers failed to initialize: bad: connection refused", "bad"),
+        ("MCP client for `cloudflare` failed to start", "cloudflare"),
+    ],
+)
+def test_mcp_server_extraction_matches_codex_startup_forms(error: str, server: str) -> None:
+    assert _failed_mcp_servers(error) == {server}
 
 
 class TestCodexRunnerClone:

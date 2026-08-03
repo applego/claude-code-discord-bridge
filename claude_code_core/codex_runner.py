@@ -141,7 +141,10 @@ _RECOVERY_MESSAGE_LIMIT = 12
 _RECOVERY_MESSAGE_CHARS = 4_000
 _RECOVERY_TRANSCRIPT_CHARS = 24_000
 _MCP_SERVER_ERROR_PATTERN = re.compile(
-    r"(?:\bserver(?:_name)?[= ]+)[`'\"]?([A-Za-z0-9_-]+)", re.IGNORECASE
+    r"(?:\bserver(?:_name)?[= ]+|\bMCP client for\s+|"
+    r"\brequired MCP servers failed to initialize:\s*)"
+    r"[`'\"]?([A-Za-z0-9_-]+)",
+    re.IGNORECASE,
 )
 
 
