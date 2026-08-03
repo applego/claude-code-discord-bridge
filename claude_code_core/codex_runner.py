@@ -140,6 +140,9 @@ _RESUME_STREAM_DISCONNECT_PATTERN = re.compile(
 _RECOVERY_MESSAGE_LIMIT = 12
 _RECOVERY_MESSAGE_CHARS = 4_000
 _RECOVERY_TRANSCRIPT_CHARS = 24_000
+_MCP_SERVER_ERROR_PATTERN = re.compile(
+    r"(?:server(?:_name)?[= ]+)[`'\"]?([A-Za-z0-9_-]+)", re.IGNORECASE
+)
 
 
 def _atomic_tool_completion(event: StreamEvent) -> StreamEvent | None:
@@ -169,6 +172,13 @@ def _is_missing_rollout_error(error: str | None) -> bool:
 def _is_resume_stream_disconnect(error: str | None) -> bool:
     """Return True for the persistent Codex Responses WebSocket failure."""
     return bool(error and _RESUME_STREAM_DISCONNECT_PATTERN.search(error))
+
+
+def _failed_mcp_servers(error: str | None) -> set[str]:
+    """Extract safe Codex config keys from an MCP startup/authentication error."""
+    if not error or "mcp" not in error.lower() and "oauth" not in error.lower():
+        return set()
+    return set(_MCP_SERVER_ERROR_PATTERN.findall(error))
 
 
 def _find_rollout(session_id: str, env: dict[str, str]) -> Path | None:
@@ -282,6 +292,7 @@ class CodexRunner:
         self.append_system_prompt = append_system_prompt
         self.images = images
         self._process: asyncio.subprocess.Process | None = None
+        self._last_stderr = ""
 
     async def run(
         self,
@@ -292,12 +303,19 @@ class CodexRunner:
         attempt_session_id = session_id
         attempt_prompt = prompt
         retried_without_resume = False
+        disabled_mcp_servers: set[str] = set()
+        retried_without_failed_mcp = False
 
         while True:
-            args = self._build_args(attempt_prompt, attempt_session_id)
+            args = self._build_args(
+                attempt_prompt,
+                attempt_session_id,
+                disabled_mcp_servers=disabled_mcp_servers,
+            )
             env = self._build_env()
             cwd = self.working_dir or os.getcwd()
             should_retry_without_resume = False
+            should_retry_without_failed_mcp = False
             saw_progress = False
 
             logger.info("Starting Codex CLI: %s (cwd=%s)", " ".join(args[:6]) + " ...", cwd)
@@ -319,6 +337,23 @@ class CodexRunner:
 
             try:
                 async for event in self._read_stream():
+                    failed_mcp_servers = _failed_mcp_servers(self._last_stderr)
+                    if (
+                        event.error
+                        and not saw_progress
+                        and not retried_without_failed_mcp
+                        and failed_mcp_servers
+                    ):
+                        disabled_mcp_servers.update(failed_mcp_servers)
+                        retried_without_failed_mcp = True
+                        should_retry_without_failed_mcp = True
+                        logger.warning(
+                            "Codex CLI failed before turn start because optional MCP server(s) "
+                            "%s could not initialize; retrying once with only those "
+                            "servers disabled",
+                            ", ".join(sorted(failed_mcp_servers)),
+                        )
+                        break
                     if (
                         attempt_session_id
                         and not retried_without_resume
@@ -365,6 +400,8 @@ class CodexRunner:
 
             if should_retry_without_resume:
                 attempt_session_id = None
+                continue
+            if should_retry_without_failed_mcp:
                 continue
             return
 
@@ -446,7 +483,13 @@ class CodexRunner:
         except Exception:
             logger.warning("_send_prompt: failed to write to stdin", exc_info=True)
 
-    def _build_args(self, prompt: str, session_id: str | None) -> list[str]:
+    def _build_args(
+        self,
+        prompt: str,
+        session_id: str | None,
+        *,
+        disabled_mcp_servers: set[str] | None = None,
+    ) -> list[str]:
         """Build command-line arguments for codex CLI.
 
         Codex CLI structure (verified against v0.124):
@@ -478,6 +521,8 @@ class CodexRunner:
         if self.append_system_prompt:
             encoded_prompt = json.dumps(self.append_system_prompt, ensure_ascii=False)
             args.extend(["-c", f"developer_instructions={encoded_prompt}"])
+        for server_name in sorted(disabled_mcp_servers or set()):
+            args.extend(["-c", f"mcp_servers.{server_name}.enabled=false"])
 
         if self.dangerously_skip_permissions:
             args.append("--dangerously-bypass-approvals-and-sandbox")
@@ -526,6 +571,7 @@ class CodexRunner:
         if self._process is None or self._process.stdout is None:
             raise RuntimeError("Process not started")
 
+        self._last_stderr = ""
         while True:
             line = await self._process.stdout.readline()
             if not line:
@@ -551,6 +597,7 @@ class CodexRunner:
             if self._process.stderr:
                 stderr_data = await self._process.stderr.read()
             stderr_text = stderr_data.decode("utf-8", errors="replace").strip()
+            self._last_stderr = stderr_text
             logger.error(
                 "Codex CLI exited with code %d: %s",
                 self._process.returncode,

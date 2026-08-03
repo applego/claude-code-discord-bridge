@@ -138,6 +138,44 @@ class TestCodexRunnerBuildArgs:
         args = runner._build_args("hello", session_id=None)
         assert not any(a.startswith("model_reasoning_effort=") for a in args)
 
+    def test_mcp_fallback_disables_only_failed_servers(self) -> None:
+        runner = CodexRunner(command="codex")
+        args = runner._build_args(
+            "hello", session_id=None, disabled_mcp_servers={"cloudflare", "freee"}
+        )
+        assert "mcp_servers.cloudflare.enabled=false" in args
+        assert "mcp_servers.freee.enabled=false" in args
+
+
+@pytest.mark.asyncio
+async def test_mcp_oauth_startup_failure_retries_with_server_disabled(monkeypatch) -> None:
+    failed = _FakeProcess(
+        stderr=(
+            b"failed to refresh OAuth tokens for server cloudflare: invalid_grant: Grant not found"
+        ),
+        returncode=1,
+    )
+    completed = json.dumps({"type": "turn.completed", "usage": {}}).encode()
+    recovered = _FakeProcess(stdout_lines=[completed + b"\n"], returncode=0)
+    processes = [failed, recovered]
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        calls.append(args)
+        return processes.pop(0)
+
+    monkeypatch.setattr(
+        "claude_code_core.codex_runner.asyncio.create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+    runner = CodexRunner(command="codex")
+
+    events = [event async for event in runner.run("hello")]
+
+    assert len(calls) == 2
+    assert "mcp_servers.cloudflare.enabled=false" in calls[1]
+    assert [event.error for event in events if event.error] == []
+
     def test_invalid_effort_raises(self) -> None:
         runner = CodexRunner(command="codex", model="gpt-5.5", effort="bogus")
         with pytest.raises(ValueError, match="Invalid Codex effort"):

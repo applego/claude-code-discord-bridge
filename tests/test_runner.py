@@ -126,6 +126,11 @@ class TestBuildArgs:
         args = runner._build_args("hello", session_id=None)
         assert "--append-system-prompt" not in args
 
+    def test_mcp_fallback_uses_strict_empty_config(self) -> None:
+        runner = ClaudeRunner()
+        args = runner._build_args("hello", session_id=None, disable_mcp=True)
+        assert "--strict-mcp-config" in args
+
     def test_clone_propagates_append_system_prompt(self) -> None:
         """clone() with append_system_prompt overrides the parent value."""
         base = ClaudeRunner(append_system_prompt="old context")
@@ -488,6 +493,50 @@ class TestRunTimeout:
         assert events[0].is_complete
         assert events[0].error is not None
         assert "imed out" in events[0].error
+
+    @pytest.mark.asyncio
+    async def test_mcp_startup_failure_retries_once_without_mcp(self) -> None:
+        failed = MagicMock()
+        failed.returncode = 1
+        failed.pid = 100
+        failed.stdin = MagicMock()
+        failed.stdin.drain = AsyncMock()
+        failed.stdout = MagicMock()
+        failed.stdout.readline = AsyncMock(return_value=b"")
+        failed.stderr = MagicMock()
+        failed.stderr.read = AsyncMock(
+            return_value=b'MCP server "cloudflare" failed authentication'
+        )
+
+        recovered = MagicMock()
+        recovered.returncode = 0
+        recovered.pid = 101
+        recovered.stdin = MagicMock()
+        recovered.stdin.drain = AsyncMock()
+        recovered.stdout = MagicMock()
+        recovered.stdout.readline = AsyncMock(
+            side_effect=[
+                b'{"type":"result","subtype":"success","session_id":"ok"}\n',
+                b"",
+            ]
+        )
+        recovered.stderr = MagicMock()
+        recovered.stderr.read = AsyncMock(return_value=b"")
+
+        calls: list[tuple[str, ...]] = []
+        processes = [failed, recovered]
+
+        async def spawn(*args, **kwargs):
+            calls.append(args)
+            return processes.pop(0)
+
+        runner = ClaudeRunner()
+        with patch("asyncio.create_subprocess_exec", side_effect=spawn):
+            events = [event async for event in runner.run("hello")]
+
+        assert len(calls) == 2
+        assert "--strict-mcp-config" in calls[1]
+        assert [event.error for event in events if event.error] == []
 
 
 class TestSignalKillSuppression:

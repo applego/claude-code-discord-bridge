@@ -28,6 +28,9 @@ from .types import ImageData, MessageType, StreamEvent
 __all__ = ["ClaudeRunner", "ImageData"]
 
 logger = logging.getLogger(__name__)
+_MCP_STARTUP_ERROR_PATTERN = re.compile(
+    r"(?:mcp.*(?:failed|error|auth)|(?:failed|error|auth).*mcp)", re.IGNORECASE | re.DOTALL
+)
 
 # Sentinel to distinguish "not provided" from None (which means "no tool restrictions").
 _UNSET = object()
@@ -106,6 +109,7 @@ class ClaudeRunner:
         self.fork_session = fork_session
         self.effort = effort
         self._process: asyncio.subprocess.Process | None = None
+        self._last_stderr = ""
 
     async def run(
         self,
@@ -124,46 +128,68 @@ class ClaudeRunner:
         Yields:
             StreamEvent objects parsed from stream-json output.
         """
-        args = self._build_args(prompt, session_id)
-        env = self._build_env()
-        cwd = self.working_dir or os.getcwd()
+        disable_mcp = False
+        while True:
+            args = self._build_args(prompt, session_id, disable_mcp=disable_mcp)
+            env = self._build_env()
+            cwd = self.working_dir or os.getcwd()
+            retry_without_mcp = False
+            saw_progress = False
 
-        logger.info(
-            "Starting Claude CLI: %s (cwd=%s, pid will follow)",
-            " ".join(args[:6]) + " ...",
-            cwd,
-        )
-
-        stdin_mode = asyncio.subprocess.PIPE
-
-        self._process = await asyncio.create_subprocess_exec(
-            *args,
-            stdin=stdin_mode,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
-            env=env,
-            limit=10 * 1024 * 1024,
-        )
-
-        logger.info("Claude CLI started: pid=%s", self._process.pid)
-
-        if self._process.stdin is not None:
-            await self._send_stream_json_message(prompt)
-
-        try:
-            async for event in self._read_stream():
-                yield event
-        except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041 — asyncio.TimeoutError != builtins.TimeoutError on Python 3.10
-            logger.warning("Claude CLI timed out after %ds", self.timeout_seconds)
-            yield StreamEvent(
-                raw={},
-                message_type=MessageType.RESULT,
-                is_complete=True,
-                error=f"Timed out after {self.timeout_seconds} seconds",
+            logger.info(
+                "Starting Claude CLI: %s (cwd=%s, pid will follow)",
+                " ".join(args[:6]) + " ...",
+                cwd,
             )
-        finally:
-            await self._cleanup()
+
+            self._process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+                env=env,
+                limit=10 * 1024 * 1024,
+            )
+
+            logger.info("Claude CLI started: pid=%s", self._process.pid)
+
+            if self._process.stdin is not None:
+                await self._send_stream_json_message(prompt)
+
+            try:
+                async for event in self._read_stream():
+                    if (
+                        event.error
+                        and not saw_progress
+                        and not disable_mcp
+                        and _MCP_STARTUP_ERROR_PATTERN.search(self._last_stderr)
+                    ):
+                        logger.warning(
+                            "Claude CLI failed before turn start because an optional MCP server "
+                            "could not initialize; retrying once with inherited MCP "
+                            "servers disabled"
+                        )
+                        retry_without_mcp = True
+                        break
+                    if event.text or event.tool_use is not None or event.tool_result_id:
+                        saw_progress = True
+                    yield event
+            except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041 — asyncio.TimeoutError != builtins.TimeoutError on Python 3.10
+                logger.warning("Claude CLI timed out after %ds", self.timeout_seconds)
+                yield StreamEvent(
+                    raw={},
+                    message_type=MessageType.RESULT,
+                    is_complete=True,
+                    error=f"Timed out after {self.timeout_seconds} seconds",
+                )
+            finally:
+                await self._cleanup()
+
+            if retry_without_mcp:
+                disable_mcp = True
+                continue
+            return
 
     def clone(
         self,
@@ -272,7 +298,13 @@ class ClaudeRunner:
                 self._process.kill()
                 await self._process.wait()
 
-    def _build_args(self, prompt: str, session_id: str | None) -> list[str]:
+    def _build_args(
+        self,
+        prompt: str,
+        session_id: str | None,
+        *,
+        disable_mcp: bool = False,
+    ) -> list[str]:
         """Build command-line arguments for claude CLI.
 
         All arguments are passed as a list to create_subprocess_exec,
@@ -316,6 +348,9 @@ class ClaudeRunner:
 
         if self.append_system_prompt:
             args.extend(["--append-system-prompt", self.append_system_prompt])
+
+        if disable_mcp:
+            args.append("--strict-mcp-config")
 
         args.extend(["--input-format", "stream-json"])
 
@@ -374,6 +409,7 @@ class ClaudeRunner:
         if self._process is None or self._process.stdout is None:
             raise RuntimeError("Process not started")
 
+        self._last_stderr = ""
         line_count = 0
         while True:
             line = await self._process.stdout.readline()
@@ -398,6 +434,7 @@ class ClaudeRunner:
             if self._process.stderr:
                 stderr_data = await self._process.stderr.read()
             stderr_text = stderr_data.decode("utf-8", errors="replace").strip()
+            self._last_stderr = stderr_text
             logger.error(
                 "Claude CLI exited with code %d: %s",
                 self._process.returncode,
