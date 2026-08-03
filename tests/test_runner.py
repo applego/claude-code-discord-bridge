@@ -542,6 +542,46 @@ class TestRunTimeout:
         assert "--strict-mcp-config" in calls[1]
         assert [event.error for event in events if event.error] == []
 
+    @pytest.mark.asyncio
+    async def test_streamed_mcp_startup_failure_retries_once_without_mcp(self) -> None:
+        failed = MagicMock(returncode=1, pid=100)
+        failed.stdin = MagicMock(drain=AsyncMock())
+        failed.stdout = MagicMock()
+        failed.stdout.readline = AsyncMock(
+            side_effect=[
+                b'{"type":"result","subtype":"error",'
+                b'"error":"MCP server cloudflare failed authentication"}\n',
+                b"",
+            ]
+        )
+        failed.stderr = MagicMock(read=AsyncMock(return_value=b""))
+
+        recovered = MagicMock(returncode=0, pid=101)
+        recovered.stdin = MagicMock(drain=AsyncMock())
+        recovered.stdout = MagicMock()
+        recovered.stdout.readline = AsyncMock(
+            side_effect=[
+                b'{"type":"result","subtype":"success","session_id":"ok"}\n',
+                b"",
+            ]
+        )
+        recovered.stderr = MagicMock(read=AsyncMock(return_value=b""))
+
+        calls: list[tuple[str, ...]] = []
+        processes = [failed, recovered]
+
+        async def spawn(*args, **kwargs):
+            calls.append(args)
+            return processes.pop(0)
+
+        runner = ClaudeRunner()
+        with patch("asyncio.create_subprocess_exec", side_effect=spawn):
+            events = [event async for event in runner.run("hello")]
+
+        assert len(calls) == 2
+        assert "--strict-mcp-config" in calls[1]
+        assert [event.error for event in events if event.error] == []
+
 
 class TestSignalKillSuppression:
     """Tests that signal-killed processes (negative returncode) don't emit error events."""

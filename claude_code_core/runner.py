@@ -165,7 +165,7 @@ class ClaudeRunner:
                         event.error
                         and not saw_progress
                         and not disable_mcp
-                        and _MCP_STARTUP_ERROR_PATTERN.search(self._last_stderr)
+                        and _MCP_STARTUP_ERROR_PATTERN.search(f"{event.error}\n{self._last_stderr}")
                     ):
                         logger.warning(
                             "Claude CLI failed before turn start because an optional MCP server "

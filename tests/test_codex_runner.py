@@ -177,6 +177,36 @@ async def test_mcp_oauth_startup_failure_retries_with_server_disabled(monkeypatc
     assert [event.error for event in events if event.error] == []
 
 
+@pytest.mark.asyncio
+async def test_streamed_mcp_failure_retries_with_server_disabled(monkeypatch) -> None:
+    failed_event = json.dumps(
+        {
+            "type": "error",
+            "message": "MCP OAuth failed for server cloudflare",
+        }
+    ).encode()
+    failed = _FakeProcess(stdout_lines=[failed_event + b"\n"], returncode=1)
+    completed = json.dumps({"type": "turn.completed", "usage": {}}).encode()
+    recovered = _FakeProcess(stdout_lines=[completed + b"\n"], returncode=0)
+    processes = [failed, recovered]
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        calls.append(args)
+        return processes.pop(0)
+
+    monkeypatch.setattr(
+        "claude_code_core.codex_runner.asyncio.create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    events = [event async for event in CodexRunner(command="codex").run("hello")]
+
+    assert len(calls) == 2
+    assert "mcp_servers.cloudflare.enabled=false" in calls[1]
+    assert [event.error for event in events if event.error] == []
+
+
 def test_mcp_server_extraction_does_not_match_observer() -> None:
     assert _failed_mcp_servers("MCP observer cloudflare reported an error") == set()
 

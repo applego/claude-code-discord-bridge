@@ -337,7 +337,9 @@ class CodexRunner:
 
             try:
                 async for event in self._read_stream():
-                    failed_mcp_servers = _failed_mcp_servers(self._last_stderr)
+                    failed_mcp_servers = _failed_mcp_servers(
+                        f"{event.error or ''}\n{self._last_stderr}"
+                    )
                     if (
                         event.error
                         and not saw_progress
