@@ -1,7 +1,8 @@
 """Thread status dashboard — live embed showing all active session states.
 
-Posts and maintains a pinned embed in the main channel that shows which
-threads are processing automatically vs. waiting for user input.
+Posts and maintains a pinned embed in the main channel once there is a live
+session or inbox item, showing which threads are processing automatically vs.
+waiting for user input.
 When a thread transitions to WAITING_INPUT, the bot mentions the owner
 so Discord's notification system surfaces the request immediately.
 
@@ -100,10 +101,12 @@ class ThreadStatusDashboard:
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Post the initial (empty) dashboard embed."""
-        async with self._lock:
-            embed = self._build_embed()
-            self._dashboard_message = await self._channel.send(embed=embed)
+        """Prepare the dashboard without posting an empty status card.
+
+        The first live session or persistent inbox entry publishes the
+        dashboard.  This keeps bot restarts silent when there is nothing for a
+        user to act on.
+        """
 
     async def set_state(
         self,
@@ -193,10 +196,16 @@ class ThreadStatusDashboard:
         """
         self._prune_stale()
 
+        embed = self._build_embed()
         if self._dashboard_message is None:
+            if not self._threads and not self._inbox:
+                return
+            try:
+                self._dashboard_message = await self._channel.send(embed=embed)
+            except (discord.HTTPException, RuntimeError):
+                logger.warning("Failed to post dashboard message", exc_info=True)
             return
 
-        embed = self._build_embed()
         try:
             await self._dashboard_message.edit(embed=embed)
         except discord.NotFound:

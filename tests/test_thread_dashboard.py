@@ -57,13 +57,10 @@ def _make_dashboard(
 
 class TestInitialize:
     @pytest.mark.asyncio
-    async def test_initialize_posts_embed(self) -> None:
+    async def test_initialize_stays_silent_until_a_session_exists(self) -> None:
         dashboard, channel = _make_dashboard()
         await dashboard.initialize()
-        channel.send.assert_called_once()
-        # Embed should be passed as keyword argument
-        call_kwargs = channel.send.call_args.kwargs
-        assert "embed" in call_kwargs
+        channel.send.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -87,12 +84,23 @@ class TestSetState:
     async def test_set_state_updates_dashboard_embed(self) -> None:
         dashboard, channel = _make_dashboard()
         await dashboard.initialize()
-        msg = channel.send.return_value
 
         await dashboard.set_state(222, ThreadState.PROCESSING, "work", thread=_make_thread(222))
 
-        # Edit should have been called once after the state change
-        msg.edit.assert_called_once()
+        channel.send.assert_called_once()
+        assert "embed" in channel.send.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_second_state_change_edits_the_existing_dashboard(self) -> None:
+        dashboard, channel = _make_dashboard()
+        await dashboard.initialize()
+        await dashboard.set_state(222, ThreadState.PROCESSING, "work", thread=_make_thread(222))
+        message = channel.send.return_value
+
+        await dashboard.set_state(222, ThreadState.WAITING_INPUT, "work", thread=_make_thread(222))
+
+        channel.send.assert_called_once()
+        message.edit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_set_state_without_initialize_does_not_crash(self) -> None:
