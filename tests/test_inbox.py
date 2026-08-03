@@ -205,6 +205,4 @@ async def test_refresh_inbox_without_entries_shows_no_inbox_section(repo):
     await dashboard.initialize()
     await dashboard.refresh_inbox(repo)
 
-    embed = channel.send.return_value.edit.call_args[1]["embed"]
-    field_names = [f.name for f in embed.fields]
-    assert not any("📬" in name for name in field_names)
+    channel.send.assert_not_called()

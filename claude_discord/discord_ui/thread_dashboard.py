@@ -107,6 +107,8 @@ class ThreadStatusDashboard:
         dashboard.  This keeps bot restarts silent when there is nothing for a
         user to act on.
         """
+        async with self._lock:
+            await self._refresh_dashboard()
 
     async def set_state(
         self,
@@ -209,6 +211,9 @@ class ThreadStatusDashboard:
         try:
             await self._dashboard_message.edit(embed=embed)
         except discord.NotFound:
+            self._dashboard_message = None
+            if not self._threads and not self._inbox:
+                return
             logger.debug("Dashboard message was deleted; re-posting")
             try:
                 self._dashboard_message = await self._channel.send(embed=embed)

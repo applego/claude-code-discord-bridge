@@ -211,6 +211,18 @@ class TestOwnerMention:
 
 class TestRemove:
     @pytest.mark.asyncio
+    async def test_remove_does_not_repost_an_empty_dashboard_after_deletion(self) -> None:
+        dashboard, channel = _make_dashboard()
+        await dashboard.initialize()
+        await dashboard.set_state(77, ThreadState.PROCESSING, "task")
+        message = channel.send.return_value
+        message.edit.side_effect = discord.NotFound(MagicMock(), "Unknown Message")
+
+        await dashboard.remove(77)
+
+        channel.send.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_remove_existing_thread(self) -> None:
         dashboard, _ = _make_dashboard()
         await dashboard.initialize()
