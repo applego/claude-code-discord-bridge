@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from claude_code_core.runner import _MCP_STARTUP_ERROR_PATTERN
 from claude_discord.claude.runner import ClaudeRunner, _resolve_windows_cmd
 from claude_discord.claude.types import ImageData
 
@@ -18,6 +19,9 @@ class TestBuildArgs:
 
     def setup_method(self) -> None:
         self.runner = ClaudeRunner(command="claude", model="sonnet")
+
+    def test_mcp_startup_pattern_does_not_match_author_text(self) -> None:
+        assert _MCP_STARTUP_ERROR_PATTERN.search("MCP metadata by author unavailable") is None
 
     def test_basic_args(self) -> None:
         args = self.runner._build_args("hello", session_id=None)

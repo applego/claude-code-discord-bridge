@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from claude_code_core.backend import SessionBackend
-from claude_code_core.codex_runner import CodexRunner, parse_codex_line
+from claude_code_core.codex_runner import CodexRunner, _failed_mcp_servers, parse_codex_line
 from claude_code_core.types import MessageType
 
 
@@ -175,6 +175,10 @@ async def test_mcp_oauth_startup_failure_retries_with_server_disabled(monkeypatc
     assert len(calls) == 2
     assert "mcp_servers.cloudflare.enabled=false" in calls[1]
     assert [event.error for event in events if event.error] == []
+
+
+def test_mcp_server_extraction_does_not_match_observer() -> None:
+    assert _failed_mcp_servers("MCP observer cloudflare reported an error") == set()
 
     def test_invalid_effort_raises(self) -> None:
         runner = CodexRunner(command="codex", model="gpt-5.5", effort="bogus")

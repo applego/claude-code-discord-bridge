@@ -141,7 +141,7 @@ _RECOVERY_MESSAGE_LIMIT = 12
 _RECOVERY_MESSAGE_CHARS = 4_000
 _RECOVERY_TRANSCRIPT_CHARS = 24_000
 _MCP_SERVER_ERROR_PATTERN = re.compile(
-    r"(?:server(?:_name)?[= ]+)[`'\"]?([A-Za-z0-9_-]+)", re.IGNORECASE
+    r"(?:\bserver(?:_name)?[= ]+)[`'\"]?([A-Za-z0-9_-]+)", re.IGNORECASE
 )
 
 
@@ -176,7 +176,7 @@ def _is_resume_stream_disconnect(error: str | None) -> bool:
 
 def _failed_mcp_servers(error: str | None) -> set[str]:
     """Extract safe Codex config keys from an MCP startup/authentication error."""
-    if not error or "mcp" not in error.lower() and "oauth" not in error.lower():
+    if not error or ("mcp" not in error.lower() and "oauth" not in error.lower()):
         return set()
     return set(_MCP_SERVER_ERROR_PATTERN.findall(error))
 

@@ -29,7 +29,9 @@ __all__ = ["ClaudeRunner", "ImageData"]
 
 logger = logging.getLogger(__name__)
 _MCP_STARTUP_ERROR_PATTERN = re.compile(
-    r"(?:mcp.*(?:failed|error|auth)|(?:failed|error|auth).*mcp)", re.IGNORECASE | re.DOTALL
+    r"(?:mcp.*(?:failed|error|authentication|authorization)|"
+    r"(?:failed|error|authentication|authorization).*mcp)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 # Sentinel to distinguish "not provided" from None (which means "no tool restrictions").
