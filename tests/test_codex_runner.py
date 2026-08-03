@@ -253,6 +253,14 @@ def test_mcp_server_extraction_matches_codex_startup_forms(error: str, server: s
     assert _failed_mcp_servers(error) == {server}
 
 
+def test_mcp_server_extraction_collects_all_required_failures() -> None:
+    error = (
+        "required MCP servers failed to initialize: "
+        "badone: connection refused; badtwo: executable not found"
+    )
+    assert _failed_mcp_servers(error) == {"badone", "badtwo"}
+
+
 class TestCodexRunnerClone:
     """Tests for clone() — creating a new runner with overrides."""
 

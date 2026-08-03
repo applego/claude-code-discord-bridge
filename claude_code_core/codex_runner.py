@@ -141,11 +141,14 @@ _RECOVERY_MESSAGE_LIMIT = 12
 _RECOVERY_MESSAGE_CHARS = 4_000
 _RECOVERY_TRANSCRIPT_CHARS = 24_000
 _MCP_SERVER_ERROR_PATTERN = re.compile(
-    r"(?:\bserver(?:_name)?[= ]+|\bMCP client for\s+|"
-    r"\brequired MCP servers failed to initialize:\s*)"
+    r"(?:\bserver(?:_name)?[= ]+|\bMCP client for\s+)"
     r"[`'\"]?([A-Za-z0-9_-]+)",
     re.IGNORECASE,
 )
+_MCP_REQUIRED_SERVERS_PATTERN = re.compile(
+    r"\brequired MCP servers failed to initialize:\s*(.*)", re.IGNORECASE | re.DOTALL
+)
+_MCP_REQUIRED_SERVER_NAME_PATTERN = re.compile(r"(?:^|;\s*)([A-Za-z0-9_-]+):")
 
 
 def _atomic_tool_completion(event: StreamEvent) -> StreamEvent | None:
@@ -181,7 +184,11 @@ def _failed_mcp_servers(error: str | None) -> set[str]:
     """Extract safe Codex config keys from an MCP startup/authentication error."""
     if not error or ("mcp" not in error.lower() and "oauth" not in error.lower()):
         return set()
-    return set(_MCP_SERVER_ERROR_PATTERN.findall(error))
+    servers = set(_MCP_SERVER_ERROR_PATTERN.findall(error))
+    summary = _MCP_REQUIRED_SERVERS_PATTERN.search(error)
+    if summary:
+        servers.update(_MCP_REQUIRED_SERVER_NAME_PATTERN.findall(summary.group(1)))
+    return servers
 
 
 def _find_rollout(session_id: str, env: dict[str, str]) -> Path | None:
