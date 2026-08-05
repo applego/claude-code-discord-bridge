@@ -123,6 +123,15 @@ def write_env(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def prompt_owner_id() -> str:
+    """Prompt until a Discord user ID is supplied for initial authorization."""
+    while True:
+        owner_id = _prompt("  Your User ID")
+        if owner_id.isdigit() and 17 <= len(owner_id) <= 19:
+            return owner_id
+        _print("  User IDs are 17-19 digit numbers. Please try again.")
+
+
 def check_claude_cli() -> bool:
     """Return True if the Claude Code CLI is installed and callable."""
     try:
@@ -273,11 +282,11 @@ async def _run_setup(env_path: Path) -> None:
                 break
             _print("  Channel IDs are 17-19 digit numbers. Please try again.")
 
-    # --- Owner user ID (optional) -----------------------------------------
+    # --- Owner user ID ----------------------------------------------------
     _print()
-    _print("Step 4 — Your Discord User ID  (optional — used for @-mentions)")
+    _print("Step 4 — Your Discord User ID  (required for authorization and @-mentions)")
     _print("  Tip: Right-click your username → Copy User ID  (Developer Mode required)")
-    owner_id = _prompt("  Your User ID", default="")
+    owner_id = prompt_owner_id()
 
     # --- Working directory -------------------------------------------------
     _print()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import discord
@@ -79,6 +80,10 @@ class ClaudeDiscordBot(commands.Bot):
             self.thread_dashboard = ThreadStatusDashboard(
                 channel=channel,
                 owner_id=self.owner_id,
+                continuation_instruction=os.getenv(
+                    "CCDB_CONTINUATION_INSTRUCTION",
+                    "Reply to this message to continue.",
+                ),
             )
             await self.thread_dashboard.initialize()
             logger.info("Thread status dashboard initialised in channel %d", self.channel_id)

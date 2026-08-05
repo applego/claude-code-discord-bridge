@@ -204,6 +204,19 @@ class TestWriteEnv:
         assert "original" not in env_file.read_text()
 
 
+class TestPromptOwnerId:
+    def test_reprompts_until_a_discord_user_id_is_supplied(self) -> None:
+        from claude_discord.cli import prompt_owner_id
+
+        with (
+            patch("claude_discord.cli._prompt", side_effect=["", "abc", "12345678901234567"]),
+            patch("claude_discord.cli._print") as mock_print,
+        ):
+            assert prompt_owner_id() == "12345678901234567"
+
+        assert mock_print.call_count == 2
+
+
 # ---------------------------------------------------------------------------
 # check_claude_cli
 # ---------------------------------------------------------------------------

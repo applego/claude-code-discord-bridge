@@ -777,6 +777,10 @@ class ClaudeChatCog(commands.Cog):
             interrupt_existing=True,
         )
 
+    async def handle_authorized_mention(self, message: discord.Message) -> None:
+        """Run in place after a custom ingress has authorized the sender and scope."""
+        await self._handle_mention(message)
+
     async def _handle_new_conversation(self, message: discord.Message) -> None:
         """Start a Claude Code session, creating a thread unless inline-reply mode is active."""
         prompt, images = await self._build_prompt_and_images(message)
