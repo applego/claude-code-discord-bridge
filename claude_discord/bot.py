@@ -25,6 +25,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def sync_commands_on_ready_enabled() -> bool:
+    """Return whether startup should mutate Discord application commands."""
+    return os.getenv("CCDB_SYNC_COMMANDS_ON_READY", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+async def guild_commands_are_missing(
+    tree: discord.app_commands.CommandTree, guild: discord.Guild
+) -> bool:
+    """Check Discord's registry without mutating application commands."""
+    return not await tree.fetch_commands(guild=guild)
+
+
 class ClaudeDiscordBot(commands.Bot):
     """Discord bot that bridges messages to Claude Code CLI."""
 
@@ -109,18 +126,32 @@ class ClaudeDiscordBot(commands.Bot):
 
         # Sync slash commands per-guild for instant availability.
         # Global-only sync (the old approach) can take up to 1 hour to propagate.
-        try:
-            for guild in self.guilds:
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-                logger.info(
-                    "Synced %d slash commands to guild %s (%d)",
-                    len(synced),
-                    guild.name,
-                    guild.id,
-                )
-        except Exception:
-            logger.exception("Failed to sync slash commands")
+        if sync_commands_on_ready_enabled():
+            try:
+                for guild in self.guilds:
+                    if not await guild_commands_are_missing(self.tree, guild):
+                        logger.info(
+                            "Skipped slash command sync for guild %s (%d): "
+                            "commands already registered",
+                            guild.name,
+                            guild.id,
+                        )
+                        continue
+                    self.tree.copy_global_to(guild=guild)
+                    synced = await self.tree.sync(guild=guild)
+                    logger.info(
+                        "Synced %d slash commands to guild %s (%d)",
+                        len(synced),
+                        guild.name,
+                        guild.id,
+                    )
+            except Exception:
+                logger.exception("Failed to sync slash commands")
+        else:
+            logger.info(
+                "Skipped slash command sync (CCDB_SYNC_COMMANDS_ON_READY=%s)",
+                os.getenv("CCDB_SYNC_COMMANDS_ON_READY", ""),
+            )
 
     async def _cleanup_orphaned_worktrees(self) -> None:
         """Remove leftover clean session worktrees from previous bot runs.
