@@ -87,9 +87,11 @@ class ThreadStatusDashboard:
         self,
         channel: discord.TextChannel,
         owner_id: int | None = None,
+        continuation_instruction: str = "Reply to this message to continue.",
     ) -> None:
         self._channel = channel
         self._owner_id = owner_id
+        self._continuation_instruction = continuation_instruction
         self._threads: dict[int, _ThreadInfo] = {}
         self._dashboard_message: discord.Message | None = None
         self._lock = asyncio.Lock()
@@ -164,8 +166,7 @@ class ThreadStatusDashboard:
         if should_mention and thread is not None:
             try:
                 await thread.send(
-                    f"✅ <@{self._owner_id}> Agent turn complete.\n"
-                    "Reply to this message to continue."
+                    f"✅ <@{self._owner_id}> Agent turn complete.\n{self._continuation_instruction}"
                 )
             except (discord.HTTPException, RuntimeError):
                 logger.debug("Failed to send owner mention in thread %d", thread_id, exc_info=True)

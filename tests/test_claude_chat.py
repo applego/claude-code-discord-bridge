@@ -1836,6 +1836,16 @@ class TestHandleMention:
 
         build.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_authorized_mention_extension_point_delegates(self) -> None:
+        cog = self._make_cog()
+        message = self._channel_message()
+        cog._handle_mention = AsyncMock()
+
+        await cog.handle_authorized_mention(message)
+
+        cog._handle_mention.assert_awaited_once_with(message)
+
 
 class TestThreadContextInjection:
     """A mention into a foreign thread carries that thread's recent history."""

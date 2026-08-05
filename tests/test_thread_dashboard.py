@@ -43,10 +43,15 @@ def _make_thread(thread_id: int = 111) -> MagicMock:
 
 def _make_dashboard(
     owner_id: int | None = None,
+    continuation_instruction: str = "Reply to this message to continue.",
 ) -> tuple[ThreadStatusDashboard, MagicMock]:
     """Return a (dashboard, channel) pair ready for testing."""
     channel = _make_channel()
-    dashboard = ThreadStatusDashboard(channel=channel, owner_id=owner_id)
+    dashboard = ThreadStatusDashboard(
+        channel=channel,
+        owner_id=owner_id,
+        continuation_instruction=continuation_instruction,
+    )
     return dashboard, channel
 
 
@@ -154,6 +159,21 @@ class TestOwnerMention:
         assert "Agent turn complete" in sent_text
         assert "Reply to this message to continue" in sent_text
         assert "Claude" not in sent_text
+
+    @pytest.mark.asyncio
+    async def test_custom_continuation_instruction_matches_listener_policy(self) -> None:
+        dashboard, _ = _make_dashboard(
+            owner_id=42,
+            continuation_instruction="Mention this bot in this thread to continue.",
+        )
+        await dashboard.initialize()
+        thread = _make_thread(10)
+
+        await dashboard.set_state(10, ThreadState.WAITING_INPUT, "working", thread=thread)
+
+        sent_text = thread.send.call_args.args[0]
+        assert "Mention this bot in this thread to continue." in sent_text
+        assert "Reply to this message to continue." not in sent_text
 
     @pytest.mark.asyncio
     async def test_mention_not_sent_if_already_waiting(self) -> None:

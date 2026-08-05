@@ -823,6 +823,9 @@ In chat-only mode, permission requests and `AskUserQuestion` prompts are **alway
 | `MAX_CONCURRENT_SESSIONS` | Max parallel Claude CLI sessions across all code paths (chat, skills, scheduler, webhooks) | `3` |
 | `SESSION_TIMEOUT_SECONDS` | Session inactivity timeout | `300` |
 | `DISCORD_OWNER_ID` | User ID to @-mention when Claude needs input | (optional) |
+| `CCDB_ALLOWED_USER_IDS` | Additional comma-separated human user IDs allowed to invoke the bot; no owner and no IDs denies all humans | (optional) |
+| `CCDB_ALLOW_ALL_USERS` | Allow every human with Discord channel access; bot messages remain ignored | `false` |
+| `CCDB_CONTINUATION_INSTRUCTION` | Instruction shown after a completed turn; customize it when continuation requires a mention | `Reply to this message to continue.` |
 | `COORDINATION_CHANNEL_ID` | Channel ID used as default fallback for AI Lounge channel | (optional) |
 | `CCDB_MENTION_ANYWHERE` | When true, an @mention summons Claude in any guild channel or thread; set `false` to listen only in the configured channels | `true` |
 | `CCDB_THREAD_CONTEXT_DAYS` | Days of the surrounding channel or thread's history prepended to the prompt when a mention wakes Claude there (`0` disables) | `7` |

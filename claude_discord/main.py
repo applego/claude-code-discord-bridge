@@ -26,6 +26,26 @@ from .utils.logger import setup_logging
 logger = logging.getLogger(__name__)
 
 
+def resolve_allowed_user_ids(
+    owner_id: int | None,
+    allowed_user_ids_raw: str,
+    allow_all_users_raw: str,
+) -> set[int] | None:
+    """Resolve standalone human authorization without conflating it with ownership."""
+    if allow_all_users_raw.strip().lower() in ("true", "1", "yes", "on"):
+        return None
+
+    allowed_user_ids = {owner_id} if owner_id else set()
+    for value in allowed_user_ids_raw.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        if not value.isdigit() or int(value) <= 0:
+            raise RuntimeError("CCDB_ALLOWED_USER_IDS contains an invalid Discord ID")
+        allowed_user_ids.add(int(value))
+    return allowed_user_ids
+
+
 def load_config() -> dict[str, str]:
     """Load and validate configuration from environment."""
     load_dotenv(find_dotenv(usecwd=True))
@@ -71,6 +91,8 @@ def load_config() -> dict[str, str]:
         "max_concurrent": os.getenv("MAX_CONCURRENT_SESSIONS", "3"),
         "timeout": os.getenv("SESSION_TIMEOUT_SECONDS", "300"),
         "owner_id": os.getenv("DISCORD_OWNER_ID", ""),
+        "allowed_user_ids": os.getenv("CCDB_ALLOWED_USER_IDS", ""),
+        "allow_all_users": os.getenv("CCDB_ALLOW_ALL_USERS", "false"),
         "channel_ids": _env("CCDB_CHANNEL_IDS", "CLAUDE_CHANNEL_IDS", ""),
         "monitor_all_channels": _env(
             "CCDB_MONITOR_ALL_CHANNELS", "CLAUDE_MONITOR_ALL_CHANNELS", "false"
@@ -175,7 +197,11 @@ async def main() -> None:
 
     async with bot:
         # Full Cog auto-setup via setup_bridge
-        allowed_user_ids = {owner_id} if owner_id else None
+        allowed_user_ids = resolve_allowed_user_ids(
+            owner_id,
+            config["allowed_user_ids"],
+            config["allow_all_users"],
+        )
         components = await setup_bridge(
             bot,
             runner,
